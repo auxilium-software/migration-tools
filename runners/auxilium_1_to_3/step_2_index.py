@@ -51,34 +51,35 @@ class Step2Index (MigrationStep):
                 print(f"    Data pointer {data_uuid} has owner UUID: {data_pointer_details['ownerUuid']} not found in users or cases")
 
     def process_relations(self):
-        for relation_id, relation_details in self.unprocessed_data["relations"].items():
+        for relation_details in self.unprocessed_data["relations"]:
+            is_uuid = relation_details["isUuid"]
             relation_type = relation_details["relationType"]
             points_to = relation_details["pointsTo"]
 
-            if relation_id in self.builder["users"] and points_to in self.builder["cases"]:
+            if is_uuid in self.builder["users"] and points_to in self.builder["cases"]:
                 if relation_type == RelationType.ASSIGNED.value:
-                    self.builder["cases"][points_to]["caseWorkers"].append(relation_id)
+                    self.builder["cases"][points_to]["assignments"].append(is_uuid)
                 elif relation_type == RelationType.SUBJECT.value:
-                    self.builder["cases"][points_to]["subjects"].append(relation_id)
+                    self.builder["cases"][points_to]["subjects"].append(is_uuid)
                 elif relation_type == RelationType.REPRESENTATIVE.value:
-                    self.builder["cases"][points_to]["representatives"].append(relation_id)
+                    self.builder["cases"][points_to]["representatives"].append(is_uuid)
                 else:
                     raise Exception(f"Unhandled user→case relation type: {relation_type!r}")
 
-            elif relation_id in self.builder["cases"]:
+            elif is_uuid in self.builder["cases"]:
                 if relation_type == RelationType.MEMBER.value:
-                    self.builder["cases"][relation_id]["members"].append(points_to)
+                    self.builder["cases"][is_uuid]["members"].append(points_to)
                 elif relation_type == RelationType.RECIPIENT.value:
-                    self.builder["cases"][relation_id]["recipients"].append(points_to)
+                    self.builder["cases"][is_uuid]["recipients"].append(points_to)
                 elif relation_type == RelationType.REPRESENTATIVE.value:
-                    self.builder["cases"][relation_id]["representatives"].append(points_to)
+                    self.builder["cases"][is_uuid]["representatives"].append(points_to)
                 elif relation_type == RelationType.SENDER.value:
-                    self.builder["cases"][relation_id]["senders"].append(points_to)
+                    self.builder["cases"][is_uuid]["senders"].append(points_to)
                 else:
                     raise Exception(f"Unhandled case relation type: {relation_type!r}")
 
             else:
-                print(f"    Relation {relation_id} → {points_to} not found in users or cases")
+                print(f"    Relation {is_uuid} → {points_to} not found in users or cases")
 
 
     def go(self):
@@ -95,7 +96,7 @@ class Step2Index (MigrationStep):
 
         for _, case_details in self.builder["cases"].items():
             case_details["dataPointers"]    = {}
-            case_details["caseWorkers"]     = []
+            case_details["assignments"]     = []
             case_details["subjects"]        = []
             case_details["representatives"] = []
             case_details["members"]         = []

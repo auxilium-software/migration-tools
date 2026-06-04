@@ -72,7 +72,7 @@ class Step1DbDump(MigrationStep):
 
         index_users = {}
         index_cases = {}
-        index_relations = {}
+        index_relations = []
         index_data_pointers = {}
 
         for user_details in db_users:
@@ -94,10 +94,11 @@ class Step1DbDump(MigrationStep):
                 "status":               self.utf8ize(case_details["status"]),
             }
         for relation_details in db_relations:
-            index_relations[relation_details["is_uuid_decoded"]] = {
+            index_relations.append({
+                "isUuid":       relation_details["is_uuid_decoded"],
                 "relationType": self.utf8ize(relation_details["relation_type"]),
-                "pointsTo": relation_details["of_uuid_decoded"],
-            }
+                "pointsTo":     relation_details["of_uuid_decoded"],
+            })
         for data_pointer_details in db_data_pointers:
             if data_pointer_details["data_location"] == DataLocation.LOCAL_FILE.value:
                 data_access = data_pointer_details["data_access"]
