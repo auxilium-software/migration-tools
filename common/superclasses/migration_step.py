@@ -29,7 +29,7 @@ class MigrationStep:
         finally:
             conn.close()
 
-    def write_to_database(self, target: int, query: str, args: tuple = None):
+    def write_to_database(self, target: int, query: str, args: dict = {}):
         try:
             conn = pymysql.connect(
                 host=os.getenv(f"AUX_{target}_MARIADB_HOSTNAME"),
