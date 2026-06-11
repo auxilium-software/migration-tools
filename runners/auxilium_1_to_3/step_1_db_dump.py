@@ -1,4 +1,5 @@
 import base64
+import json
 
 from dotenv import load_dotenv
 
@@ -69,11 +70,13 @@ class Step1DbDump(MigrationStep):
                 {self.read_query_builder("of_uuid", "of_uuid_decoded")}
                 FROM relations;
             """)
+        db_enum_definitions = self.read_from_database(1, f"SELECT * FROM enum_definitions;")
 
         index_users = {}
         index_cases = {}
         index_relations = []
         index_data_pointers = {}
+        index_enum_definitions = {}
 
         for user_details in db_users:
             index_users[user_details["user_uuid_decoded"]] = {
@@ -121,11 +124,14 @@ class Step1DbDump(MigrationStep):
                 "documentDate":         data_pointer_details["document_date"].isoformat(),
                 "creationTimestamp":    data_pointer_details["creation_timestamp"].isoformat(),
             }
+        for enum_definition_details in db_enum_definitions:
+            index_enum_definitions[enum_definition_details["enum_name"]] = json.loads(enum_definition_details["enum_json_object"])
 
         self.builder = {
             "users": index_users,
             "cases": index_cases,
             "relations": index_relations,
             "dataPointers": index_data_pointers,
+            "enumeratorDefinitions": index_enum_definitions,
         }
         self.write_to_cache_file(target=DumpFile.AUX_1_TO_3_STEP_1_DB_DUMP, data=self.builder)
