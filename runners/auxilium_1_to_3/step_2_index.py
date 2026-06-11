@@ -81,6 +81,12 @@ class Step2Index (MigrationStep):
             else:
                 print(f"    Relation {is_uuid} → {points_to} not found in users or cases")
 
+    def process_communications(self):
+        pass
+
+    def process_enumerators(self):
+        self.builder["enumeratorDefinitions"] = self.unprocessed_data["enumeratorDefinitions"]
+
 
     def go(self):
         self.unprocessed_data = self.read_cache_file(target=DumpFile.AUX_1_TO_3_STEP_1_DB_DUMP)
@@ -89,6 +95,7 @@ class Step2Index (MigrationStep):
             "users": self.unprocessed_data["users"],
             "cases": self.unprocessed_data["cases"],
             "communications": {},
+            "enumeratorDefinitions": {},
         }
 
         for _, user_details in self.builder["users"].items():
@@ -105,6 +112,8 @@ class Step2Index (MigrationStep):
 
         self.process_data_pointers()
         self.process_relations()
+        self.process_communications()
+        self.process_enumerators()
 
         self.write_to_cache_file(target=DumpFile.AUX_1_TO_3_STEP_2_INDEX, data=self.builder)
 
