@@ -47,6 +47,30 @@ class MigrationStep:
         finally:
             conn.close()
 
+    def write_many_to_database(self, target: int, query: str, args_list: list, chunk_size: int = 500) -> None:
+        if not args_list:
+            return
+
+        query = query.strip().rstrip(";")
+        conn = pymysql.connect(
+            host=os.getenv(f"AUX_{target}_MARIADB_HOSTNAME"),
+            user=os.getenv(f"AUX_{target}_MARIADB_USERNAME"),
+            password=os.getenv(f"AUX_{target}_MARIADB_PASSWORD"),
+            db=os.getenv(f"AUX_{target}_MARIADB_DATABASE"),
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor,
+        )
+        try:
+            with conn.cursor() as cursor:
+                for i in range(0, len(args_list), chunk_size):
+                    cursor.executemany(query, args_list[i:i + chunk_size])
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     def read_cache_file(self, target: DumpFile):
         # file path relative to main.py
         with open(f"cache/{target.value}.json") as json_file:
