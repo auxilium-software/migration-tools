@@ -9,8 +9,13 @@ from common.superclasses.migration_step import MigrationStep
 def _to_locale(raw: str):
     return json.loads(raw)["value"].lower() + "-GB"
 
-def _to_consent_bool(raw: str):
-    return json.loads(raw)["value"] == "YES"
+def _to_consent_bool(raw: str|None):
+    if raw is None:
+        return None
+    temp = json.loads(raw)
+    if temp["type"] != "YES_NO":
+        raise ValueError(f"unexpected consent type {temp['@type']!r}")
+    return temp["value"] == "YES"
 
 def _to_wemwbs(raw: str):
     return {k: int(v) for k, v in json.loads(raw).items()}
@@ -25,11 +30,11 @@ def _to_dict(raw: str):
 TRANSFORMS = {
     DataType.LANGUAGE_PREFERENCE.value:         _to_locale,
 
-    DataType.CASE_STUDY_CONSENT.value:          _to_dict,
-    DataType.RESEARCH_CONTACT_CONSENT.value:    _to_dict,
+    DataType.CASE_STUDY_CONSENT.value:          _to_consent_bool,
 
     DataType.WEMWBS.value:                      _to_wemwbs,
 
+    DataType.RESEARCH_CONTACT_CONSENT.value:    _to_dict,
     DataType.EMPLOYMENT_DETAILS.value:          _to_dict,
     DataType.MILITARY_SERVICE.value:            _to_dict,
     DataType.RELATIONSHIP_STATUS.value:         _to_dict,
