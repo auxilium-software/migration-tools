@@ -1,6 +1,4 @@
 import datetime
-import hashlib
-import json
 import uuid
 
 from dotenv import load_dotenv
@@ -14,6 +12,8 @@ import os
 
 
 class Step9DataUpload(MigrationStep):
+    ENUM_REF_CONTENT_TYPE = "application/x-auxilium-data-enumumerator-value-id"
+
     def __init__(self):
         super().__init__()
         load_dotenv()
@@ -146,18 +146,22 @@ class Step9DataUpload(MigrationStep):
         value_rows = []
         translation_rows = []
 
+        enum_value_index = {}
+
         for name, enum_details in self.indexed_data["enumeratorDefinitions"].items():
             enum_id = uuid.uuid4()
+            enum_value_index[name] = {}
             enumerator_rows.append({
                 "id":               enum_id,
                 "created_at_utc":   datetime.datetime.utcnow(),
-                "name":             name,
+                "canonical_name":   name,
                 "description":      None,
                 "is_active":        1,
             })
 
             for sort_order, (option_name, translations) in enumerate(enum_details.items()):
                 enum_value_id = uuid.uuid4()
+                enum_value_index[name][option_name] = enum_value_id
 
                 value_rows.append({
                     "id":               enum_value_id,
@@ -189,7 +193,7 @@ class Step9DataUpload(MigrationStep):
                     (
                         id,
                         created_at_utc,
-                        name,
+                        canonical_name,
                         description,
                         is_active
                     )
@@ -197,7 +201,7 @@ class Step9DataUpload(MigrationStep):
                     (
                         %(id)s,
                         %(created_at_utc)s,
-                        %(name)s,
+                        %(canonical_name)s,
                         %(description)s,
                         %(is_active)s
                     )
@@ -260,13 +264,15 @@ class Step9DataUpload(MigrationStep):
         print("    creating users")
         user_rows = []
         property_rows = []
+        unresolved_enum_refs = 0
+
         for user_id, user_data in self.indexed_data["users"].items():
             user_rows.append({
                 "id":                                       user_id,
                 "created_at_utc":                           user_data["creationTimestamp"],
-                "created_by":                               None,
+                "created_by_user_id":                       None,
                 "last_updated_at_utc":                      None,
-                "last_updated_by":                          None,
+                "last_updated_by_user_id":                  None,
                 "email_address":                            user_data["emailAddress"],
                 "password_hash":                            user_data["password"],
                 "full_name":                                user_data["fullName"],
@@ -276,7 +282,7 @@ class Step9DataUpload(MigrationStep):
                 "date_of_birth":                            self._date_or_none(user_data["dateOfBirth"]),
                 "how_did_you_find_out_about_our_service":   None,
                 "language_preference":                      "en-GB",
-                "has_email_address_been_verified":          1,  # <===== actually verify this lol
+                "has_email_address_been_verified":          1,  # <===== actually verify this
                 "allow_login":                              1,
                 "must_change_password":                     1,  # <===== !!! make sure that everybody knows this is coming !!!
                 "is_case_worker":                           0,
@@ -290,20 +296,57 @@ class Step9DataUpload(MigrationStep):
             })
 
             for property_key, property_value in user_data["additionalProperties"].items():
+                # enum property
                 if isinstance(property_value, dict):
+                    if property_value.get("@type") != "enum-json-v1":
+                        continue
+
+                    enum_name = property_value.get("type")
+                    enum_option = property_value.get("value")
+
+                    if enum_option is None:
+                        continue
+
+                    value_uuid = enum_value_index.get(enum_name, {}).get(enum_option)
+                    if value_uuid is None:
+                        print(
+                            f"        unresolved enum ref on user {user_id}: "
+                            f"{property_key} -> {enum_name}={enum_option!r} "
+                            f"(no matching enumerator value) -> SKIP"
+                        )
+                        unresolved_enum_refs += 1
+                        continue
+
+                    property_rows.append({
+                        "id":                       uuid.uuid4(),
+                        "created_at_utc":           user_data["creationTimestamp"],
+                        "created_by_user_id":       None,
+                        "last_updated_at_utc":      None,
+                        "last_updated_by_user_id":  None,
+                        "user_id":                  user_id,
+                        "original_name":            property_key,
+                        "url_slug":                 property_key,
+                        "content_type":             self.ENUM_REF_CONTENT_TYPE,
+                        "content":                  str(value_uuid),
+                    })
                     continue
+
+                # scalar property
                 property_rows.append({
-                    "id":                   uuid.uuid4(),
-                    "created_at_utc":       user_data["creationTimestamp"],
-                    "created_by":           None,
-                    "last_updated_at_utc":  None,
-                    "last_updated_by":      None,
-                    "user_id":              user_id,
-                    "original_name":        property_key,
-                    "url_slug":             property_key,
-                    "content_type":         "text/plain;",  # charset=utf-8",
-                    "content":              property_value,
+                    "id":                       uuid.uuid4(),
+                    "created_at_utc":           user_data["creationTimestamp"],
+                    "created_by_user_id":       None,
+                    "last_updated_at_utc":      None,
+                    "last_updated_by_user_id":  None,
+                    "user_id":                  user_id,
+                    "original_name":            property_key,
+                    "url_slug":                 property_key,
+                    "content_type":             "text/plain;",  # charset=utf-8",
+                    "content":                  property_value,
                 })
+
+        if unresolved_enum_refs:
+            print(f"    WARNING: {unresolved_enum_refs} enum reference(s) could not be resolved and were skipped")
 
         self.write_many_to_database(
             target=3,
@@ -312,9 +355,9 @@ class Step9DataUpload(MigrationStep):
                 (
                     id,
                     created_at_utc,
-                    created_by,
+                    created_by_user_id,
                     last_updated_at_utc,
-                    last_updated_by,
+                    last_updated_by_user_id,
                     email_address,
                     password_hash,
                     full_name,
@@ -340,9 +383,9 @@ class Step9DataUpload(MigrationStep):
                 (
                     %(id)s,
                     %(created_at_utc)s,
-                    %(created_by)s,
+                    %(created_by_user_id)s,
                     %(last_updated_at_utc)s,
-                    %(last_updated_by)s,
+                    %(last_updated_by_user_id)s,
                     %(email_address)s,
                     %(password_hash)s,
                     %(full_name)s,
@@ -375,9 +418,9 @@ class Step9DataUpload(MigrationStep):
                 (
                     id,
                     created_at_utc,
-                    created_by,
+                    created_by_user_id,
                     last_updated_at_utc,
-                    last_updated_by,
+                    last_updated_by_user_id,
                     user_id,
                     original_name,
                     url_slug,
@@ -388,9 +431,9 @@ class Step9DataUpload(MigrationStep):
                 (
                     %(id)s,
                     %(created_at_utc)s,
-                    %(created_by)s,
+                    %(created_by_user_id)s,
                     %(last_updated_at_utc)s,
-                    %(last_updated_by)s,
+                    %(last_updated_by_user_id)s,
                     %(user_id)s,
                     %(original_name)s,
                     %(url_slug)s,
@@ -409,33 +452,33 @@ class Step9DataUpload(MigrationStep):
         worker_rows = []
         for case_id, case_data in self.indexed_data["cases"].items():
             case_rows.append({
-                "id":                   case_id,
-                "created_at_utc":       case_data["creationTimestamp"],
-                "created_by":           None,
-                "last_updated_at_utc":  None,
-                "last_updated_by":      None,
-                "title":                case_data["caseTitle"],
-                "description":          case_data["caseDescription"],
-                "sensitivity":          "confidential",
-                "status":               "open",
+                "id":                       case_id,
+                "created_at_utc":           case_data["creationTimestamp"],
+                "created_by_user_id":       None,
+                "last_updated_at_utc":      None,
+                "last_updated_by_user_id":  None,
+                "title":                    case_data["caseTitle"],
+                "description":              case_data["caseDescription"],
+                "sensitivity":              "confidential",
+                "status":                   "open",
             })
 
             for user_id in case_data["subjects"]:
                 client_rows.append({
-                    "id":               uuid.uuid4(),
-                    "created_at_utc":   case_data["creationTimestamp"],
-                    "created_by":       None,
-                    "case_id":          case_id,
-                    "user_id":          user_id,
+                    "id":                   uuid.uuid4(),  # was case_id -> PK collision on multi-subject cases
+                    "created_at_utc":       case_data["creationTimestamp"],
+                    "created_by_user_id":   None,
+                    "case_id":              case_id,
+                    "user_id":              user_id,
                 })
 
             for user_id in case_data["representatives"]:
                 worker_rows.append({
-                    "id":               uuid.uuid4(),
-                    "created_at_utc":   case_data["creationTimestamp"],
-                    "created_by":       None,
-                    "case_id":          case_id,
-                    "user_id":          user_id,
+                    "id":                   uuid.uuid4(),  # was case_id -> PK collision on multi-rep cases
+                    "created_at_utc":       case_data["creationTimestamp"],
+                    "created_by_user_id":   None,
+                    "case_id":              case_id,
+                    "user_id":              user_id,
                 })
 
         self.write_many_to_database(
@@ -445,9 +488,9 @@ class Step9DataUpload(MigrationStep):
                 (
                     id,
                     created_at_utc,
-                    created_by,
+                    created_by_user_id,
                     last_updated_at_utc,
-                    last_updated_by,
+                    last_updated_by_user_id,
                     title,
                     description,
                     sensitivity,
@@ -457,9 +500,9 @@ class Step9DataUpload(MigrationStep):
                 (
                     %(id)s,
                     %(created_at_utc)s,
-                    %(created_by)s,
+                    %(created_by_user_id)s,
                     %(last_updated_at_utc)s,
-                    %(last_updated_by)s,
+                    %(last_updated_by_user_id)s,
                     %(title)s,
                     %(description)s,
                     %(sensitivity)s,
@@ -476,7 +519,7 @@ class Step9DataUpload(MigrationStep):
                 (
                     id,
                     created_at_utc,
-                    created_by,
+                    created_by_user_id,
                     case_id,
                     user_id
                 )
@@ -484,7 +527,7 @@ class Step9DataUpload(MigrationStep):
                 (
                     %(id)s,
                     %(created_at_utc)s,
-                    %(created_by)s,
+                    %(created_by_user_id)s,
                     %(case_id)s,
                     %(user_id)s
                 );
@@ -499,7 +542,7 @@ class Step9DataUpload(MigrationStep):
                 (
                     id,
                     created_at_utc,
-                    created_by,
+                    created_by_user_id,
                     case_id,
                     user_id
                 )
@@ -507,7 +550,7 @@ class Step9DataUpload(MigrationStep):
                 (
                     %(id)s,
                     %(created_at_utc)s,
-                    %(created_by)s,
+                    %(created_by_user_id)s,
                     %(case_id)s,
                     %(user_id)s
                 );
