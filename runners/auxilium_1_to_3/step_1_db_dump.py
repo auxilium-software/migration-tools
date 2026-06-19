@@ -21,9 +21,17 @@ class Step1DbDump(MigrationStep):
         )
         self.builder = {}
 
-
     def read_query_builder(self, column: str, as_name: str):
-        return f"LOWER(CONCAT(SUBSTR(HEX({column}), 1, 8), '-', SUBSTR(HEX({column}), 9, 4), '-', SUBSTR(HEX({column}), 13, 4), '-', SUBSTR(HEX({column}), 17, 4), '-', SUBSTR(HEX({column}), 21, 12))) AS {as_name}"
+        # return f"BIN_TO_UUID({column}, 1) AS {as_name}"
+        return (
+            f"LOWER(CONCAT("
+            f"SUBSTR(HEX({column}), 9, 8), '-', "
+            f"SUBSTR(HEX({column}), 5, 4), '-', "
+            f"SUBSTR(HEX({column}), 1, 4), '-', "
+            f"SUBSTR(HEX({column}), 17, 4), '-', "
+            f"SUBSTR(HEX({column}), 21, 12)"
+            f")) AS {as_name}"
+        )
 
     def utf8ize(self, mixed):
         if isinstance(mixed, dict):
