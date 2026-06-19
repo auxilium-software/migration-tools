@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 from common.auxilium1.common.decryption_manager import DecryptionManager
 from common.auxilium1.enums.data_location import DataLocation
+from common.auxilium1.enums.object_schema import ObjectSchema
 from common.enums.dump_file import DumpFile
 from common.superclasses.migration_step import MigrationStep
 
@@ -32,6 +33,15 @@ class Step9DataUpload(MigrationStep):
             "system__bulletin",
         ):
             self.write_to_database(target=3, query=f"DELETE FROM {table};")
+
+
+
+
+
+
+
+
+
 
         ####################################################################################################
         # CREATE SYSTEM STUFF
@@ -138,6 +148,15 @@ class Step9DataUpload(MigrationStep):
                 for row in settings_rows
             ],
         )
+
+
+
+
+
+
+
+
+
 
         ####################################################################################################
         # ENUMERATORS
@@ -259,11 +278,21 @@ class Step9DataUpload(MigrationStep):
                 args_list=translation_rows,
             )
 
+
+
+
+
+
+
+
+
+
         ####################################################################################################
         # USERS + PROPERTIES
         print("    creating users")
         user_rows = []
         property_rows = []
+        wemwbs_rows = []
         unresolved_enum_refs = 0
 
         for user_id, user_data in self.indexed_data["users"].items():
@@ -343,6 +372,28 @@ class Step9DataUpload(MigrationStep):
                     "url_slug":                 property_key,
                     "content_type":             "text/plain;",  # charset=utf-8",
                     "content":                  property_value,
+                })
+            wemwbs_data = user_data.get("wemwbs")
+            if wemwbs_data is not None:
+                wemwbs_rows.append({
+                    "id":                               wemwbs_data["@id"],
+                    "created_at_utc":                   wemwbs_data["@creationTimestamp"],
+                    "created_by_user_id":               user_id,
+                    "user_id":                          user_id,
+                    "optimism_score":                   wemwbs_data["optimism"],
+                    "usefulness_score":                 wemwbs_data["usefulness"],
+                    "relaxed_score":                    wemwbs_data["relaxed"],
+                    "interested_in_people_score":       wemwbs_data["interested_in_people"],
+                    "spare_energy_score":               wemwbs_data["spare_energy"],
+                    "problem_handling_score":           wemwbs_data["problem_handling"],
+                    "clear_thought_score":              wemwbs_data["clear_thought"],
+                    "feeling_good_self_score":          wemwbs_data["feeling_good_self"],
+                    "feeling_close_to_people_score":    wemwbs_data["feeling_close_to_people"],
+                    "confidence_score":                 wemwbs_data["confidence"],
+                    "making_up_own_mind_score":         wemwbs_data["make_up_own_mind"],
+                    "feeling_loved_score":              wemwbs_data["feeling_loved"],
+                    "interested_in_new_things_score":   wemwbs_data["interested_in_new_things"],
+                    "feeling_cheerful_score":           wemwbs_data["feeling_cheerful"],
                 })
 
         if unresolved_enum_refs:
@@ -444,12 +495,71 @@ class Step9DataUpload(MigrationStep):
             args_list=property_rows,
         )
 
+        self.write_many_to_database(
+            target=3,
+            query="""
+                INSERT INTO user__wemwbs_assessments
+                (
+                    id,
+                    created_at_utc,
+                    created_by_user_id,
+                    UserId,
+                    optimism_score,
+                    usefulness_score,
+                    relaxed_score,
+                    interested_in_people_score,
+                    spare_energy_score,
+                    problem_handling_score,
+                    clear_thought_score,
+                    feeling_good_self_score,
+                    feeling_close_to_people_score,
+                    confidence_score,
+                    making_up_own_mind_score,
+                    feeling_loved_score,
+                    interested_in_new_things_score,
+                    feeling_cheerful_score
+                )
+                VALUES
+                (
+                    %(id)s,
+                    %(created_at_utc)s,
+                    %(created_by_user_id)s,
+                    %(user_id)s,
+                    %(optimism_score)s,
+                    %(usefulness_score)s,
+                    %(relaxed_score)s,
+                    %(interested_in_people_score)s,
+                    %(spare_energy_score)s,
+                    %(problem_handling_score)s,
+                    %(clear_thought_score)s,
+                    %(feeling_good_self_score)s,
+                    %(feeling_close_to_people_score)s,
+                    %(confidence_score)s,
+                    %(making_up_own_mind_score)s,
+                    %(feeling_loved_score)s,
+                    %(interested_in_new_things_score)s,
+                    %(feeling_cheerful_score)s
+                );
+            """,
+            args_list=wemwbs_rows,
+        )
+
+
+
+
+
+
+
+
+
+
         ####################################################################################################
         # CASES + CLIENTS + WORKERS
         print("    creating cases")
         case_rows = []
         client_rows = []
         worker_rows = []
+        timeline_rows = []
         for case_id, case_data in self.indexed_data["cases"].items():
             case_rows.append({
                 "id":                       case_id,
@@ -465,7 +575,7 @@ class Step9DataUpload(MigrationStep):
 
             for user_id in case_data["subjects"]:
                 client_rows.append({
-                    "id":                   uuid.uuid4(),  # was case_id -> PK collision on multi-subject cases
+                    "id":                   uuid.uuid4(),
                     "created_at_utc":       case_data["creationTimestamp"],
                     "created_by_user_id":   None,
                     "case_id":              case_id,
@@ -474,7 +584,7 @@ class Step9DataUpload(MigrationStep):
 
             for user_id in case_data["representatives"]:
                 worker_rows.append({
-                    "id":                   uuid.uuid4(),  # was case_id -> PK collision on multi-rep cases
+                    "id":                   uuid.uuid4(),
                     "created_at_utc":       case_data["creationTimestamp"],
                     "created_by_user_id":   None,
                     "case_id":              case_id,
@@ -557,6 +667,14 @@ class Step9DataUpload(MigrationStep):
             """,
             args_list=worker_rows,
         )
+
+
+
+
+
+
+
+
 
     def _date_or_none(self, value):
         if value is None or value == "":
