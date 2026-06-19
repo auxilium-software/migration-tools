@@ -6,35 +6,35 @@ from common.enums.dump_file import DumpFile
 from common.superclasses.migration_step import MigrationStep
 
 
-def _to_locale(raw: str):
+def _to_locale(data_pointer_id: str, data_pointer_details: str, raw: str):
     return json.loads(raw)["value"].lower() + "-GB"
 
-def _to_consent_bool(raw: str|None):
-    if raw is None:
-        return None
-    temp = json.loads(raw)
-    if temp["type"] != "YES_NO":
-        raise ValueError(f"unexpected consent type {temp['@type']!r}")
-    return temp["value"] == "YES"
+def _to_consent_bool(data_pointer_id: str, data_pointer_details: str, raw: str):
+    return json.loads(raw)["value"] == "YES"
 
-def _to_wemwbs(raw: str):
-    return {k: int(v) for k, v in json.loads(raw).items()}
+def _to_wemwbs(data_pointer_id: str, data_pointer_details: str, raw: str):
+    temp = {k: int(v) for k, v in json.loads(raw).items()}
+    temp["@id"] = data_pointer_id
+    temp["@creationTimestamp"] = data_pointer_details["creationTimestamp"]
+    return temp
 
-def _to_dict(raw: str):
+def _to_dict(data_pointer_id: str, data_pointer_details: str, raw: str):
     temp = {
         k: v for k, v in json.loads(raw).items()
     }
+    temp["@id"] = data_pointer_id
     temp["@type"] = "enum-json-v1"
+    temp["@creationTimestamp"] = data_pointer_details["creationTimestamp"]
     return temp
 
 TRANSFORMS = {
     DataType.LANGUAGE_PREFERENCE.value:         _to_locale,
 
-    DataType.CASE_STUDY_CONSENT.value:          _to_consent_bool,
+    DataType.CASE_STUDY_CONSENT.value:          _to_dict,
+    DataType.RESEARCH_CONTACT_CONSENT.value:    _to_dict,
 
     DataType.WEMWBS.value:                      _to_wemwbs,
 
-    DataType.RESEARCH_CONTACT_CONSENT.value:    _to_dict,
     DataType.EMPLOYMENT_DETAILS.value:          _to_dict,
     DataType.MILITARY_SERVICE.value:            _to_dict,
     DataType.RELATIONSHIP_STATUS.value:         _to_dict,
@@ -43,20 +43,14 @@ TRANSFORMS = {
     DataType.TIMEZONE_PREFERENCE.value:         _to_dict,
 }
 
-# first-class fields: always present at root, default None
-
+# first-class fields: always present at root, default None.
+# enum-json data types are NOT here any more -> they go to dataEnumerators.
 USER_ROOT_FIELDS = {
-    DataType.USER_TYPE.value: "userType",
-
     DataType.LANGUAGE_PREFERENCE.value: "languagePreference",
     DataType.HOME_ADDRESS.value: "fullAddress",
     DataType.PHONE_NUMBER.value: "telephoneNumber",
     DataType.DATE_OF_BIRTH.value: "dateOfBirth",
     DataType.WEMWBS.value: "wemwbs",
-
-    DataType.RELATIONSHIP_STATUS.value: "relationshipStatus",
-    DataType.MILITARY_SERVICE_STATUS.value: "militaryServiceStatus",
-    DataType.RESEARCH_CONTACT_CONSENT.value: "researchContactConsent",
 }
 
 CASE_ROOT_FIELDS = {
@@ -64,10 +58,9 @@ CASE_ROOT_FIELDS = {
     DataType.CASE_DESCRIPTION.value:  "caseDescription",
 
     DataType.CASE_REFERRER.value: "caseReferrer",
-    DataType.CASE_STUDY_CONSENT.value: "caseStudyConsent",
 }
 
-# scalar "properties": promote to root fields / additionalProperties
+# scalar "properties": promote to root fields / dataEnumerators / additionalProperties
 SCALAR_SCHEMAS = {
     ObjectSchema.TEXT.value,
     ObjectSchema.TEXT_ISO_DATE.value,
@@ -75,26 +68,33 @@ SCALAR_SCHEMAS = {
     ObjectSchema.WEMWBS_JSON_V1.value,
 }
 
+# binary attachments -> entity["files"]
 FILE_SCHEMAS = {
     ObjectSchema.FILE.value,
     ObjectSchema.IMAGE.value,
     ObjectSchema.AUDIO.value,
     ObjectSchema.VIDEO.value,
 }
+
+# communications -> entity["messages"]
 MESSAGE_SCHEMAS = {
     ObjectSchema.MESSAGE_JSON_V1.value,
     ObjectSchema.EMAIL_JSON_V1.value,
     ObjectSchema.RFC822.value,
 }
+
+# timeline notes -> entity["timeline"]
 TIMELINE_SCHEMAS = {
     ObjectSchema.TIMELINE_NOTE_JSON_V1.value,
 }
+
 TODO_SCHEMAS = {
     ObjectSchema.TODO_JSON_V1.value,
 }
 ASSIGNMENT_SCHEMAS = {
     ObjectSchema.ASSIGNMENT_RECORD_JSON_V1.value,
 }
+
 
 
 class Step3PromoteProperties(MigrationStep):
@@ -108,6 +108,7 @@ class Step3PromoteProperties(MigrationStep):
         data_pointers = entity.pop("dataPointers")
 
         additional = {}
+        data_enumerators = {}
         files = {}
         messages = {}
         timeline = {}
@@ -126,9 +127,11 @@ class Step3PromoteProperties(MigrationStep):
                 value = pointer_details["dataAccess"]
                 transform = TRANSFORMS.get(data_type)
                 if transform is not None:
-                    value = transform(value)
+                    value = transform(pointer_id, pointer_details, value)
 
-                if data_type in root_fields:
+                if isinstance(value, dict) and value.get("@type") == "enum-json-v1":
+                    data_enumerators[data_type] = value
+                elif data_type in root_fields:
                     entity[root_fields[data_type]] = value
                 else:
                     additional[data_type] = value
@@ -150,6 +153,7 @@ class Step3PromoteProperties(MigrationStep):
                 )
 
         entity["additionalProperties"] = additional
+        entity["dataEnumerators"] = data_enumerators
         entity["files"] = files
         entity["messages"] = messages
         entity["timeline"] = timeline
