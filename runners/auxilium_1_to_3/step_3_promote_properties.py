@@ -78,11 +78,13 @@ class Step3PromoteProperties(MigrationStep):
         for field in root_fields.values():
             entity[field] = None
 
-        for data_type, pointer in list(data_pointers.items()):
-            if pointer["objectSchema"] not in SCALAR_SCHEMAS:
+        for pointer_id, pointer_details in list(data_pointers.items()):
+            if pointer_details["objectSchema"] not in SCALAR_SCHEMAS:
                 continue  # attachments stay in dataPointers
 
-            value = pointer["dataAccess"]
+            data_type = pointer_details["dataType"]
+
+            value = pointer_details["dataAccess"]
             transform = TRANSFORMS.get(data_type)
             if transform is not None:
                 value = transform(value)
@@ -92,7 +94,7 @@ class Step3PromoteProperties(MigrationStep):
             else:
                 additional[data_type] = value
 
-            del data_pointers[data_type]
+            del data_pointers[pointer_id]
 
         entity["additionalProperties"] = additional
 

@@ -1,3 +1,4 @@
+from common.auxilium1.enums.data_location import DataLocation
 from common.auxilium1.enums.data_type import DataType
 from common.auxilium1.enums.relation_type import RelationType
 from common.enums.dump_file import DumpFile
@@ -21,7 +22,9 @@ class Step2Index (MigrationStep):
                 if data_pointer_details['historical'] == 1:
                     continue
 
-                self.builder["users"][data_pointer_details['ownerUuid']]["dataPointers"][data_pointer_details['dataType']] = {
+                if data_pointer_details["dataLocation"] == DataLocation.LOCAL_FILE.value:
+                self.builder["users"][data_pointer_details['ownerUuid']]["dataPointers"][data_uuid] = {
+                    "dataType": data_pointer_details["dataType"],
                     "objectSchema": data_pointer_details["objectSchema"],
                     "mimeType": data_pointer_details["mimeType"],
                     "flags": data_pointer_details["flags"],
@@ -36,7 +39,8 @@ class Step2Index (MigrationStep):
                 if data_pointer_details['historical'] == 1:
                     continue
 
-                self.builder["cases"][data_pointer_details['ownerUuid']]["dataPointers"][data_pointer_details['dataType']] = {
+                self.builder["cases"][data_pointer_details['ownerUuid']]["dataPointers"][data_uuid] = {
+                    "dataType": data_pointer_details["dataType"],
                     "objectSchema": data_pointer_details["objectSchema"],
                     "mimeType": data_pointer_details["mimeType"],
                     "flags": data_pointer_details["flags"],
